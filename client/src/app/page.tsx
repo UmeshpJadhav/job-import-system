@@ -27,8 +27,6 @@ export default function Home() {
             setLoading(false);
         }
     };
-
-    // Use Ref to access current page inside socket listener without re-binding
     const pageRef = useRef(page);
 
     useEffect(() => {
@@ -37,12 +35,10 @@ export default function Home() {
     }, [page]);
 
     useEffect(() => {
-        // Socket.IO Connection
-        const socket = io('http://localhost:5000');
+        const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000');
 
         socket.on('connect', () => {
             console.log('Connected to WebSocket', socket.id);
-            // Self-heal: Fetch latest history on connect/reconnect to handle missed events
             fetchHistory(pageRef.current);
         });
 
@@ -55,7 +51,6 @@ export default function Home() {
                 const existingLogIndex = prevLogs.findIndex(log => log.runId === data.runId);
 
                 if (existingLogIndex > -1) {
-                    // Log found: Update it unconditionally (Server is Truth)
                     const updatedLogs = [...prevLogs];
                     const log = { ...updatedLogs[existingLogIndex] };
 
@@ -82,13 +77,12 @@ export default function Home() {
                     updatedLogs[existingLogIndex] = log;
                     return updatedLogs;
                 } else if (data.type === 'started') {
-                    // Log not found (Socket beat API response, or other user triggered): Add it
                     if (pageRef.current === 1) {
                         const newLog: ImportLog = {
                             _id: 'socket-' + Date.now(),
                             runId: data.runId,
                             importName: 'General Import',
-                            status: 'processing', // Started = Processing
+                            status: 'processing',
                             startTime: new Date().toISOString(),
                             metrics: { totalFetched: 0, totalImported: 0, newJobs: 0, updatedJobs: 0, failedJobs: 0 },
                             createdAt: new Date().toISOString(),
@@ -104,23 +98,20 @@ export default function Home() {
         return () => {
             socket.disconnect();
         };
-    }, []); // Run once on mount
+    }, []);
 
     const handleTrigger = async () => {
         try {
             setTriggering(true);
             const data = await jobService.triggerImport();
-            const { runId } = data;
-
-            // Optimistic Update
+            const { runId, importName } = data;
             setLogs(prevLogs => {
-                // Duplicate Check: If socket already added it, don't add again
                 if (prevLogs.some(l => l.runId === runId)) return prevLogs;
 
                 const newLog: ImportLog = {
                     _id: 'temp-' + Date.now(),
                     runId: runId,
-                    importName: 'General Import',
+                    importName: importName, // User enforced URL only
                     status: 'pending',
                     startTime: new Date().toISOString(),
                     metrics: { totalFetched: 0, totalImported: 0, newJobs: 0, updatedJobs: 0, failedJobs: 0 },
@@ -134,18 +125,21 @@ export default function Home() {
                 return prevLogs;
             });
 
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            alert('Failed to trigger import');
+            const message = err.response?.data?.message || err.message || 'Failed to trigger import';
+            alert(message);
         } finally {
             setTriggering(false);
         }
     };
 
+    const isProcessing = logs.some(log => log.status === 'processing' || log.status === 'pending');
+
     return (
         <main className="min-h-screen bg-gray-50 p-8 font-sans">
             <div className="max-w-6xl mx-auto">
-                <Header triggering={triggering} onTrigger={handleTrigger} />
+                <Header triggering={triggering || isProcessing} onTrigger={handleTrigger} />
                 <HistoryTable logs={logs} loading={loading} />
                 <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
             </div>

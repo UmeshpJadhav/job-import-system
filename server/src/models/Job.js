@@ -4,7 +4,7 @@ const JobSchema = new mongoose.Schema({
     title: {
         type: String,
         required: true,
-        index: true // Basic search
+        index: true 
     },
     company: {
         type: String,
@@ -17,12 +17,12 @@ const JobSchema = new mongoose.Schema({
         type: String,
     },
     type: {
-        type: String // Full-time, Contract, etc.
+        type: String 
     },
     sourceUrl: {
         type: String,
         required: true,
-        unique: true // CRITICAL: Ensures no duplicates, enables efficient upsert
+        unique: true 
     },
     postedDate: {
         type: Date,

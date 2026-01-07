@@ -37,4 +37,4 @@ const ImportLogSchema = new mongoose.Schema({
     timestamps: true
 });
 
-module.exports = mongoose.model('ImportLog', ImportLogSchema);
+module.exports = mongoose.model('ImportLog', ImportLogSchema, 'import_logs');

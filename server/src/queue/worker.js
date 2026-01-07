@@ -36,16 +36,35 @@ const worker = new Worker('import-queue', async (job) => {
                         upsert: true
                     }
                 }));
+                try {
+                    const result = await Job.bulkWrite(operations, { ordered: false });
+                    metrics.newJobs += result.upsertedCount;
+                    metrics.updatedJobs += result.modifiedCount;
+                    metrics.totalImported += (result.upsertedCount + result.modifiedCount);
+                } catch (bulkError) {
+                    if (bulkError.writeErrors) {
+                        metrics.failedJobs += bulkError.writeErrors.length;
+                        metrics.newJobs += bulkError.result.nUpserted;
+                        metrics.updatedJobs += bulkError.result.nModified;
+                        metrics.totalImported += (bulkError.result.nUpserted + bulkError.result.nModified);
 
-                const result = await Job.bulkWrite(operations);
-
-                metrics.newJobs += result.upsertedCount;
-                metrics.updatedJobs += result.modifiedCount;
-                metrics.totalImported += (result.upsertedCount + result.modifiedCount);
-
-                // Report Progress
+                        bulkError.writeErrors.slice(0, 3).forEach(err => {
+                            failureLogs.push({
+                                message: `Batch Record Error: ${err.errmsg}`,
+                                timestamp: new Date()
+                            });
+                        });
+                    } else {
+                        console.error(`Batch write failed for ${url}:`, bulkError);
+                        metrics.failedJobs += batch.length;
+                        failureLogs.push({
+                            message: `Batch Failure: ${bulkError.message}`,
+                            timestamp: new Date()
+                        });
+                    }
+                }
                 const progress = Math.round(((i + BATCH_SIZE) / fetchedJobs.length) * 100);
-                await job.updateProgress(Math.min(progress, 100)); // Ensure max 100
+                await job.updateProgress(Math.min(progress, 100));
             }
         } catch (error) {
             console.error(`Failed to fetch/process ${url}:`, error);
@@ -55,10 +74,8 @@ const worker = new Worker('import-queue', async (job) => {
                 timestamp: new Date()
             });
         }
-        // Respect rate limits with a small delay between feeds
         await new Promise(resolve => setTimeout(resolve, 2000));
     }
-
     await ImportLog.updateOne({ runId }, {
         status: 'completed',
         metrics,
