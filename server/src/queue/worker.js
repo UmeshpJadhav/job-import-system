@@ -42,16 +42,21 @@ const worker = new Worker('import-queue', async (job) => {
                 metrics.newJobs += result.upsertedCount;
                 metrics.updatedJobs += result.modifiedCount;
                 metrics.totalImported += (result.upsertedCount + result.modifiedCount);
+
+                // Report Progress
+                const progress = Math.round(((i + BATCH_SIZE) / fetchedJobs.length) * 100);
+                await job.updateProgress(Math.min(progress, 100)); // Ensure max 100
             }
         } catch (error) {
             console.error(`Failed to fetch/process ${url}:`, error);
-            metrics.failedJobs++; // This treats the whole feed as 1 failure or 0? 
-            // Better: log specific error
+            metrics.failedJobs++;
             failureLogs.push({
                 message: error.message,
                 timestamp: new Date()
             });
         }
+        // Respect rate limits with a small delay between feeds
+        await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     await ImportLog.updateOne({ runId }, {

@@ -11,6 +11,10 @@ const ImportLogSchema = new mongoose.Schema({
         enum: ['pending', 'processing', 'completed', 'failed'],
         default: 'pending'
     },
+    importName: {
+        type: String,
+        default: 'General Import'
+    },
     startTime: {
         type: Date,
         default: Date.now
@@ -27,7 +31,6 @@ const ImportLogSchema = new mongoose.Schema({
     },
     failureLogs: [{
         message: String,
-        jobId: String,
         timestamp: { type: Date, default: Date.now }
     }]
 }, {

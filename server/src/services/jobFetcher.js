@@ -8,7 +8,12 @@ const parser = new XMLParser({
 
 const fetchFeed = async (url) => {
     try {
-        const response = await axios.get(url);
+        const response = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'application/xml, text/xml, */*; q=0.01'
+            }
+        });
         const xmlData = response.data;
         const jsonObj = parser.parse(xmlData);
 
@@ -40,7 +45,7 @@ const normalizeJob = (item) => {
         description: item.description,
         sourceUrl: item.link || item.guid,
         postedDate: item.pubDate ? new Date(item.pubDate) : new Date(),
-        categories: [], 
+        categories: [],
         type: item['job_listing:job_type']
     };
 };
