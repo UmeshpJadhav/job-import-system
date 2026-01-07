@@ -39,7 +39,7 @@ const startServer = async () => {
                 'https://jobicy.com/?feed=job_feed&job_categories=management',
                 'https://www.higheredjobs.com/rss/articleFeed.cfm'
             ];
-            triggerImport(urls).catch(err => console.error(err));
+            triggerImport(urls, urls[0]).catch(err => console.error(err));
         }, ONE_HOUR);
     });
 
@@ -51,11 +51,22 @@ const startServer = async () => {
         }
     });
 
+    io.on('connection', (socket) => {
+        console.log(`[Socket] Client connected: ${socket.id}`);
+        socket.on('disconnect', () => {
+            console.log(`[Socket] Client disconnected: ${socket.id}`);
+        });
+    });
+
     const worker = require('./src/queue/worker');
 
     worker.on('active', (job) => {
         console.log(`[Socket] Job ${job.id} active`);
         io.emit('import-update', { type: 'started', runId: job.data.runId });
+    });
+
+    worker.on('progress', (job, progress) => {
+        io.emit('import-update', { type: 'progress', runId: job.data.runId, progress });
     });
 
     worker.on('completed', (job, result) => {

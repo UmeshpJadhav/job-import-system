@@ -40,7 +40,9 @@ const triggerJob = async (req, res) => {
             'https://www.higheredjobs.com/rss/articleFeed.cfm'
         ];
 
-        const runId = await triggerImport(urls);
+        const { name } = req.body || {};
+        const importName = name || urls[0];
+        const runId = await triggerImport(urls, importName);
         res.json({ message: 'Import started', runId });
     } catch (error) {
         res.status(500).json({ message: error.message });
