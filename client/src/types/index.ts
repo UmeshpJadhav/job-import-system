@@ -14,11 +14,14 @@ export interface FailureLog {
 export interface ImportLog {
     _id: string;
     runId: string;
+    importName: string;
     status: 'pending' | 'processing' | 'completed' | 'failed';
     startTime: string;
     endTime?: string;
     metrics: Metrics;
     failureLogs?: FailureLog[];
+    createdAt?: string;
+    updatedAt?: string;
 }
 
 export interface HistoryResponse {

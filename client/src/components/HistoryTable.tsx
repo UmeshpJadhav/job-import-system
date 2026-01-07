@@ -8,7 +8,7 @@ interface HistoryTableProps {
 
 export default function HistoryTable({ logs, loading }: HistoryTableProps) {
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
             <table className="w-full text-left">
                 <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -27,7 +27,7 @@ export default function HistoryTable({ logs, loading }: HistoryTableProps) {
                             <td className="px-6 py-4">
                                 <div className="flex items-center gap-2">
                                     <StatusIcon status={log.status} />
-                                    <span className="font-medium text-gray-900 capitalize">Job_Feed_Import.xml</span>
+                                    <span className="font-medium text-gray-900 truncate max-w-[300px] block" title={log.importName}>{log.importName || 'Unknown Import'}</span>
                                 </div>
                                 <div className="text-xs text-gray-500 mt-1 font-mono uppercase tracking-wider">{log.status}</div>
                             </td>
