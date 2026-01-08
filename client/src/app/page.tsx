@@ -8,12 +8,16 @@ import Pagination from '../components/Pagination';
 import { jobService } from '../services/api';
 import { ImportLog } from '../types';
 
+const INITIAL_METRICS = { totalFetched: 0, totalImported: 0, newJobs: 0, updatedJobs: 0, failedJobs: 0 };
+
 export default function Home() {
     const [logs, setLogs] = useState<ImportLog[]>([]);
     const [loading, setLoading] = useState(false);
     const [triggering, setTriggering] = useState(false);
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
+
+    const isProcessing = logs.some(log => log.status === 'processing' || log.status === 'pending');
 
     const fetchHistory = async (pageToFetch = page) => {
         try {
@@ -38,7 +42,6 @@ export default function Home() {
         const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000');
 
         socket.on('connect', () => {
-            console.log('Connected to WebSocket', socket.id);
             fetchHistory(pageRef.current);
         });
 
@@ -81,10 +84,10 @@ export default function Home() {
                         const newLog: ImportLog = {
                             _id: 'socket-' + Date.now(),
                             runId: data.runId,
-                            importName: 'General Import',
+                            importName: data.importName || 'External Feed', // Use dynamic name
                             status: 'processing',
                             startTime: new Date().toISOString(),
-                            metrics: { totalFetched: 0, totalImported: 0, newJobs: 0, updatedJobs: 0, failedJobs: 0 },
+                            metrics: INITIAL_METRICS,
                             createdAt: new Date().toISOString(),
                             updatedAt: new Date().toISOString()
                         } as ImportLog;
@@ -100,27 +103,48 @@ export default function Home() {
         };
     }, []);
 
+    // Polling Fallback: If any job is processing, poll every 3 seconds to handle missed socket events
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (isProcessing) {
+            interval = setInterval(() => {
+                fetchHistory(pageRef.current);
+            }, 3000);
+        }
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [isProcessing]);
+
     const handleTrigger = async () => {
         try {
             setTriggering(true);
             const data = await jobService.triggerImport();
-            const { runId, importName } = data;
+            const { jobs } = data; // Expecting array of jobs
+
             setLogs(prevLogs => {
-                if (prevLogs.some(l => l.runId === runId)) return prevLogs;
+                const newLogs: ImportLog[] = [];
 
-                const newLog: ImportLog = {
-                    _id: 'temp-' + Date.now(),
-                    runId: runId,
-                    importName: importName, // User enforced URL only
-                    status: 'pending',
-                    startTime: new Date().toISOString(),
-                    metrics: { totalFetched: 0, totalImported: 0, newJobs: 0, updatedJobs: 0, failedJobs: 0 },
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                } as ImportLog;
+                // Create optimistic log for each job in the batch
+                if (Array.isArray(jobs)) {
+                    jobs.forEach((job: { runId: string, importName: string }) => {
+                        if (!prevLogs.some(l => l.runId === job.runId)) {
+                            newLogs.push({
+                                _id: 'temp-' + Math.random().toString(36).substr(2, 9),
+                                runId: job.runId,
+                                importName: job.importName,
+                                status: 'pending',
+                                startTime: new Date().toISOString(),
+                                metrics: INITIAL_METRICS,
+                                createdAt: new Date().toISOString(),
+                                updatedAt: new Date().toISOString()
+                            } as ImportLog);
+                        }
+                    });
+                }
 
-                if (page === 1) {
-                    return [newLog, ...prevLogs].slice(0, 10);
+                if (page === 1 && newLogs.length > 0) {
+                    return [...newLogs, ...prevLogs].slice(0, 10);
                 }
                 return prevLogs;
             });
@@ -134,7 +158,7 @@ export default function Home() {
         }
     };
 
-    const isProcessing = logs.some(log => log.status === 'processing' || log.status === 'pending');
+
 
     return (
         <main className="min-h-screen bg-gray-50 p-8 font-sans">

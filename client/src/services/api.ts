@@ -10,7 +10,7 @@ export const jobService = {
     },
 
     triggerImport: async () => {
-        const res = await axios.post<{ message: string, runId: string, importName: string }>(`${API_BASE}/import/trigger`, {});
+        const res = await axios.post<{ message: string, jobs: { runId: string, importName: string }[], count: number }>(`${API_BASE}/import/trigger`, {});
         return res.data;
     }
 };
