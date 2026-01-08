@@ -4,8 +4,8 @@ const Job = require('../models/Job');
 const ImportLog = require('../models/ImportLog');
 const { fetchFeed } = require('../services/jobFetcher');
 
-const worker = new Worker('import-queue', async (job) => {
-    const { runId, urls } = job.data;
+const worker = new Worker('feed-import-queue', async (job) => {
+    const { runId, url } = job.data;
     console.log(`[Worker] Starting import run: ${runId}`);
 
     await ImportLog.updateOne({ runId }, { status: 'processing', startTime: new Date() });
@@ -18,63 +18,51 @@ const worker = new Worker('import-queue', async (job) => {
         failedJobs: 0
     };
     let failureLogs = [];
+    try {
+        console.log(`Fetching: ${url}`);
+        const fetchedJobs = await fetchFeed(url);
+        metrics.totalFetched += fetchedJobs.length;
+        const BATCH_SIZE = parseInt(process.env.JOB_BATCH_SIZE || '500');
+        for (let i = 0; i < fetchedJobs.length; i += BATCH_SIZE) {
+            const batch = fetchedJobs.slice(i, i + BATCH_SIZE);
+            const operations = batch.map(jobData => ({
+                updateOne: {
+                    filter: { sourceUrl: jobData.sourceUrl },
+                    update: { $set: jobData },
+                    upsert: true
+                }
+            }));
+            try {
+                const result = await Job.bulkWrite(operations, { ordered: false });
+                metrics.newJobs += result.upsertedCount;
+                metrics.updatedJobs += result.modifiedCount;
+                metrics.totalImported += (result.upsertedCount + result.modifiedCount);
+            } catch (bulkError) {
+                if (bulkError.writeErrors) {
+                    metrics.failedJobs += bulkError.writeErrors.length;
+                    metrics.newJobs += bulkError.result.nUpserted;
+                    metrics.updatedJobs += bulkError.result.nModified;
+                    metrics.totalImported += (bulkError.result.nUpserted + bulkError.result.nModified);
 
-    for (const url of urls) {
-        try {
-            console.log(`Fetching: ${url}`);
-            const fetchedJobs = await fetchFeed(url);
-            metrics.totalFetched += fetchedJobs.length;
-
-            // Batch Processing
-            const BATCH_SIZE = parseInt(process.env.JOB_BATCH_SIZE || '500');
-            for (let i = 0; i < fetchedJobs.length; i += BATCH_SIZE) {
-                const batch = fetchedJobs.slice(i, i + BATCH_SIZE);
-                const operations = batch.map(jobData => ({
-                    updateOne: {
-                        filter: { sourceUrl: jobData.sourceUrl },
-                        update: { $set: jobData },
-                        upsert: true
-                    }
-                }));
-                try {
-                    const result = await Job.bulkWrite(operations, { ordered: false });
-                    metrics.newJobs += result.upsertedCount;
-                    metrics.updatedJobs += result.modifiedCount;
-                    metrics.totalImported += (result.upsertedCount + result.modifiedCount);
-                } catch (bulkError) {
-                    if (bulkError.writeErrors) {
-                        metrics.failedJobs += bulkError.writeErrors.length;
-                        metrics.newJobs += bulkError.result.nUpserted;
-                        metrics.updatedJobs += bulkError.result.nModified;
-                        metrics.totalImported += (bulkError.result.nUpserted + bulkError.result.nModified);
-
-                        bulkError.writeErrors.slice(0, 3).forEach(err => {
-                            failureLogs.push({
-                                message: `Batch Record Error: ${err.errmsg}`,
-                                timestamp: new Date()
-                            });
-                        });
-                    } else {
-                        console.error(`Batch write failed for ${url}:`, bulkError);
-                        metrics.failedJobs += batch.length;
+                    bulkError.writeErrors.slice(0, 3).forEach(err => {
                         failureLogs.push({
-                            message: `Batch Failure: ${bulkError.message}`,
+                            message: `Batch Record Error: ${err.errmsg}`,
                             timestamp: new Date()
                         });
-                    }
+                    });
+                } else {
                 }
-                const progress = Math.round(((i + BATCH_SIZE) / fetchedJobs.length) * 100);
-                await job.updateProgress(Math.min(progress, 100));
             }
-        } catch (error) {
-            console.error(`Failed to fetch/process ${url}:`, error);
-            metrics.failedJobs++;
-            failureLogs.push({
-                message: error.message,
-                timestamp: new Date()
-            });
+            const progress = Math.round(((i + BATCH_SIZE) / fetchedJobs.length) * 100);
+            await job.updateProgress(Math.min(progress, 100));
         }
-        await new Promise(resolve => setTimeout(resolve, 2000));
+    } catch (error) {
+        console.error(`Failed to fetch/process ${url}:`, error);
+        metrics.failedJobs++;
+        failureLogs.push({
+            message: error.message,
+            timestamp: new Date()
+        });
     }
     await ImportLog.updateOne({ runId }, {
         status: 'completed',
@@ -88,10 +76,10 @@ const worker = new Worker('import-queue', async (job) => {
 
 }, {
     connection,
-    concurrency: parseInt(process.env.JOB_CONCURRENCY || '5'),
+    concurrency: parseInt(process.env.JOB_CONCURRENCY || '1'),
     limiter: {
-        max: 10,
-        duration: 1000
+        max: 1,
+        duration: 2000
     }
 });
 

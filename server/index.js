@@ -26,27 +26,23 @@ const startServer = async () => {
         console.log(`Server running on port ${PORT}`);
 
         const ONE_HOUR = 60 * 60 * 1000;
-        setInterval(() => {
+        const FEED_URLS = require('./src/config/feeds');
+
+        setInterval(async () => {
             console.log('[Cron] Triggering scheduled import...');
-            const urls = [
-                'https://jobicy.com/?feed=job_feed',
-                'https://jobicy.com/?feed=job_feed&job_categories=smm&job_types=full-time',
-                'https://jobicy.com/?feed=job_feed&job_categories=seller&job_types=full-time&search_region=france',
-                'https://jobicy.com/?feed=job_feed&job_categories=design-multimedia',
-                'https://jobicy.com/?feed=job_feed&job_categories=data-science',
-                'https://jobicy.com/?feed=job_feed&job_categories=copywriting',
-                'https://jobicy.com/?feed=job_feed&job_categories=business',
-                'https://jobicy.com/?feed=job_feed&job_categories=management',
-                'https://www.higheredjobs.com/rss/articleFeed.cfm'
-            ];
-            triggerImport(urls, urls[0]).catch(err => console.error(err));
+            for (const url of FEED_URLS) {
+                try {
+                    await triggerImport(url, url);
+                } catch (err) {
+                    console.error(`[Cron] Failed to trigger ${url}:`, err.message);
+                }
+            }
         }, ONE_HOUR);
     });
 
-    // Socket.IO Setup
     const io = require('socket.io')(server, {
         cors: {
-            origin: "*", // Allow all origins for simplicity
+            origin: "*", 
             methods: ["GET", "POST"]
         }
     });
@@ -62,7 +58,7 @@ const startServer = async () => {
 
     worker.on('active', (job) => {
         console.log(`[Socket] Job ${job.id} active`);
-        io.emit('import-update', { type: 'started', runId: job.data.runId });
+        io.emit('import-update', { type: 'started', runId: job.data.runId, importName: job.data.url });
     });
 
     worker.on('progress', (job, progress) => {
